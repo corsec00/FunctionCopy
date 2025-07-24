@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "SMB_SERVER": "servidor-01",
+    "SMB_SHARE": "Shared02",
+    "SMB_USERNAME": "seu_usuario",
+    "SMB_PASSWORD": "sua_senha",
+    "STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=seu_storage;AccountKey=sua_chave;EndpointSuffix=core.windows.net",
+    "BLOB_CONTAINER_NAME": "processed-logs"
+  }
+}
+
