@@ -14,14 +14,14 @@ Esta Azure Function processa arquivos de log de um compartilhamento de rede, fil
 ## Estrutura do Projeto
 
 ```
-azure-log-processor/
+FUNCTIONCOPY/
 ├── LogProcessorFunction/
 │   ├── __init__.py          # Código principal da função
 │   └── function.json        # Configuração da função
 ├── host.json                # Configuração do host
 ├── requirements.txt         # Dependências Python
 ├── local.settings.json      # Configurações locais (desenvolvimento)
-└── README.md               # Este arquivo
+└── README.md                # Este arquivo
 ```
 
 ## Configurações Necessárias
