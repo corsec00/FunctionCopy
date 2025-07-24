@@ -2,30 +2,24 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
 # Azure Functions artifacts
 bin
 obj
 appsettings.json
 # local.settings.json
-
 # Python virtual environment
 venv/
 env/
 .env
 .python_packages
 .venv
-
 # IDE
 .idea/
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Logs
 *.log
-
 # Docs
 Versions/
-Docs/*.md
+Docs/
