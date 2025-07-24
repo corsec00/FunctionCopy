@@ -13,9 +13,10 @@ appsettings.json
 venv/
 env/
 .env
+.python_packages
+.venv
 
 # IDE
-
 .idea/
 
 # OS
@@ -25,6 +26,6 @@ Thumbs.db
 # Logs
 *.log
 
-
-.python_packages
-.venv
+# Docs
+Versions/
+Docs/*.md
