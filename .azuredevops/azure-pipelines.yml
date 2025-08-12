@@ -1,0 +1,348 @@
+# Azure DevOps Pipeline for FunctionCopy with Key Vault
+# Trigger on main and develop branches
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - LogProcessorFunction/*
+    - requirements.txt
+    - host.json
+    - .azuredevops/*
+
+pr:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - LogProcessorFunction/*
+    - requirements.txt
+    - host.json
+
+variables:
+  # Build Variables
+  pythonVersion: '3.9'
+  functionAppPackagePath: '.'
+  
+  # Environment-specific variables
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+    environmentName: 'production'
+    azureServiceConnection: 'azure-prod-connection'
+    functionAppName: '$(AZURE_FUNCTIONAPP_NAME_PROD)'
+    resourceGroupName: '$(AZURE_RESOURCE_GROUP_PROD)'
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+    environmentName: 'development'
+    azureServiceConnection: 'azure-dev-connection'
+    functionAppName: '$(AZURE_FUNCTIONAPP_NAME_DEV)'
+    resourceGroupName: '$(AZURE_RESOURCE_GROUP_DEV)'
+
+stages:
+- stage: Validate
+  displayName: 'Validate and Test'
+  jobs:
+  - job: ValidateCode
+    displayName: 'Code Validation'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python $(pythonVersion)'
+      inputs:
+        versionSpec: '$(pythonVersion)'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black bandit safety
+      displayName: 'Install dependencies'
+
+    - script: |
+        black --check --diff LogProcessorFunction/
+      displayName: 'Code formatting check with Black'
+
+    - script: |
+        flake8 LogProcessorFunction/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 LogProcessorFunction/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      displayName: 'Lint with flake8'
+
+    - script: |
+        bandit -r LogProcessorFunction/ -f json -o bandit-report.json
+      displayName: 'Security scan with Bandit'
+      continueOnError: true
+
+    - script: |
+        safety check --json --output safety-report.json
+      displayName: 'Dependency vulnerability scan'
+      continueOnError: true
+
+    - script: |
+        # Criar testes básicos se não existirem
+        mkdir -p tests
+        if [ ! -f tests/test_function.py ]; then
+          cat > tests/test_function.py << 'EOF'
+        import unittest
+        from unittest.mock import patch, MagicMock
+        import sys
+        import os
+        
+        # Adicionar o diretório da função ao path
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'LogProcessorFunction'))
+        
+        class TestLogProcessor(unittest.TestCase):
+            def test_filter_log_lines(self):
+                # Teste básico da função de filtro
+                from LogProcessorFunction import filter_log_lines
+                
+                test_lines = [
+                    "2023-01-01 10:00:00 User login successful\n",
+                    "2023-01-01 10:01:00 Regular operation\n", 
+                    "2023-01-01 10:02:00 User logout\n",
+                    "2023-01-01 10:03:00 Login failed\n"
+                ]
+                
+                filtered = filter_log_lines(test_lines)
+                self.assertEqual(len(filtered), 3)  # login, logout, fail
+                
+            def test_validate_configuration(self):
+                # Teste da validação de configuração
+                from LogProcessorFunction import validate_configuration
+                
+                with patch.dict(os.environ, {
+                    'KEY_VAULT_URL': 'https://test.vault.azure.net/',
+                    'BLOB_CONTAINER_NAME': 'test-container'
+                }):
+                    self.assertTrue(validate_configuration())
+        
+        if __name__ == '__main__':
+            unittest.main()
+        EOF
+        fi
+        python -m pytest tests/ -v --cov=LogProcessorFunction --cov-report=xml --cov-report=html
+      displayName: 'Run unit tests'
+
+    - task: PublishTestResults@2
+      displayName: 'Publish test results'
+      inputs:
+        testResultsFiles: '**/test-*.xml'
+        testRunTitle: 'Python $(pythonVersion)'
+      condition: succeededOrFailed()
+
+    - task: PublishCodeCoverageResults@1
+      displayName: 'Publish coverage results'
+      inputs:
+        codeCoverageTool: Cobertura
+        summaryFileLocation: '$(System.DefaultWorkingDirectory)/**/coverage.xml'
+        reportDirectory: '$(System.DefaultWorkingDirectory)/**/htmlcov'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish security reports'
+      inputs:
+        pathToPublish: '$(System.DefaultWorkingDirectory)'
+        artifactName: 'security-reports'
+        publishLocation: 'Container'
+      condition: succeededOrFailed()
+
+- stage: Build
+  displayName: 'Build Application'
+  dependsOn: Validate
+  condition: succeeded()
+  jobs:
+  - job: BuildFunction
+    displayName: 'Build Azure Function'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python $(pythonVersion)'
+      inputs:
+        versionSpec: '$(pythonVersion)'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+      displayName: 'Install application dependencies'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive function app'
+      inputs:
+        rootFolderOrFile: '$(functionAppPackagePath)'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish build artifacts'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'function-app'
+        publishLocation: 'Container'
+
+- stage: DeployDev
+  displayName: 'Deploy to Development'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  jobs:
+  - deployment: DeployToDev
+    displayName: 'Deploy to Development Environment'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'development'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@0
+            displayName: 'Download build artifacts'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'function-app'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: AzureFunctionApp@1
+            displayName: 'Deploy Azure Function'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'functionAppLinux'
+              appName: '$(functionAppName)'
+              package: '$(System.ArtifactsDirectory)/function-app/$(Build.BuildId).zip'
+              runtimeStack: 'PYTHON|3.9'
+              deploymentMethod: 'auto'
+
+          - task: AzureCLI@2
+            displayName: 'Post-deployment validation'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Validating deployment..."
+                az functionapp show --name $(functionAppName) --resource-group $(resourceGroupName)
+                echo "Deployment validation completed"
+
+- stage: DeployProd
+  displayName: 'Deploy to Production'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployToProd
+    displayName: 'Deploy to Production Environment'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadBuildArtifacts@0
+            displayName: 'Download build artifacts'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'function-app'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: AzureFunctionApp@1
+            displayName: 'Deploy Azure Function'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'functionAppLinux'
+              appName: '$(functionAppName)'
+              package: '$(System.ArtifactsDirectory)/function-app/$(Build.BuildId).zip'
+              runtimeStack: 'PYTHON|3.9'
+              deploymentMethod: 'auto'
+
+          - task: AzureCLI@2
+            displayName: 'Post-deployment validation'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Validating production deployment..."
+                az functionapp show --name $(functionAppName) --resource-group $(resourceGroupName)
+                
+                # Aguardar alguns segundos para o deployment estar ativo
+                sleep 30
+                
+                # Verificar logs recentes
+                az functionapp logs tail --name $(functionAppName) --resource-group $(resourceGroupName) --timeout 30
+                
+                echo "Production deployment validation completed"
+
+          - task: AzureCLI@2
+            displayName: 'Create deployment tag'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Criar tag de deployment
+                DEPLOYMENT_TAG="deployment-$(date +%Y%m%d-%H%M%S)"
+                az tag create --resource-id "/subscriptions/$(ARM_SUBSCRIPTION_ID)/resourceGroups/$(resourceGroupName)/providers/Microsoft.Web/sites/$(functionAppName)" --tags "LastDeployment=$DEPLOYMENT_TAG" "BuildId=$(Build.BuildId)" "SourceBranch=$(Build.SourceBranch)"
+                echo "Deployment tagged with: $DEPLOYMENT_TAG"
+
+- stage: Notify
+  displayName: 'Notification'
+  dependsOn: 
+  - DeployDev
+  - DeployProd
+  condition: always()
+  jobs:
+  - job: NotifyTeams
+    displayName: 'Notify Microsoft Teams'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: PowerShell@2
+      displayName: 'Send Teams notification'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $webhookUri = "$(MS_TEAMS_WEBHOOK_URI)"
+          $status = "$(Agent.JobStatus)"
+          $branch = "$(Build.SourceBranch)"
+          $buildId = "$(Build.BuildId)"
+          $author = "$(Build.RequestedFor)"
+          
+          $color = if ($status -eq "Succeeded") { "00FF00" } else { "FF0000" }
+          
+          $body = @{
+              "@type" = "MessageCard"
+              "@context" = "http://schema.org/extensions"
+              "themeColor" = $color
+              "summary" = "Azure Function Deployment"
+              "sections" = @(
+                  @{
+                      "activityTitle" = "FunctionCopy Deployment"
+                      "activitySubtitle" = "Status: $status"
+                      "facts" = @(
+                          @{
+                              "name" = "Branch"
+                              "value" = $branch
+                          },
+                          @{
+                              "name" = "Build ID"
+                              "value" = $buildId
+                          },
+                          @{
+                              "name" = "Author"
+                              "value" = $author
+                          }
+                      )
+                  }
+              )
+          }
+          
+          $json = $body | ConvertTo-Json -Depth 10
+          Invoke-RestMethod -Uri $webhookUri -Method Post -Body $json -ContentType "application/json"
+      condition: and(always(), ne(variables['MS_TEAMS_WEBHOOK_URI'], ''))
+

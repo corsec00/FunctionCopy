@@ -1,4 +1,4 @@
-# Script para deploy da Azure Function
+# Script para deploy da Azure Function com Azure Key Vault
 # Autor: Leo Santos
 # Data: $(Get-Date)
 
@@ -13,85 +13,95 @@ param(
     [string]$ProjectPath = "."
 )
 
-Write-Host "=== Iniciando deploy da Azure Function ===" -ForegroundColor Green
+Write-Host "=== Iniciando Deploy da Azure Function ===" -ForegroundColor Green
 Write-Host "Function App: $FunctionAppName" -ForegroundColor Yellow
 Write-Host "Resource Group: $ResourceGroupName" -ForegroundColor Yellow
 Write-Host "Project Path: $ProjectPath" -ForegroundColor Yellow
 
 # Verificar se o Azure Functions Core Tools está instalado
-Write-Host "`n1. Verificando Azure Functions Core Tools..." -ForegroundColor Cyan
+Write-Host "n1. Verificando Azure Functions Core Tools..." -ForegroundColor Cyan
 try {
     $funcVersion = func --version
-    Write-Host "Azure Functions Core Tools versão: $funcVersion" -ForegroundColor Green
+    Write-Host "Azure Functions Core Tools: $funcVersion" -ForegroundColor Green
 } catch {
     Write-Host "Azure Functions Core Tools não encontrado!" -ForegroundColor Red
     Write-Host "Instale usando: npm install -g azure-functions-core-tools@4 --unsafe-perm true" -ForegroundColor Yellow
     exit 1
 }
 
-# Verificar se estamos no diretório correto
-Write-Host "`n2. Verificando estrutura do projeto..." -ForegroundColor Cyan
-if (-not (Test-Path "$ProjectPath/host.json")) {
-    Write-Host "Arquivo host.json não encontrado! Verifique se está no diretório correto." -ForegroundColor Red
+# Verificar se está logado no Azure
+Write-Host "n2. Verificando login no Azure..." -ForegroundColor Cyan
+try {
+    $account = az account show --query user.name --output tsv
+    Write-Host "Logado como: $account" -ForegroundColor Green
+} catch {
+    Write-Host "Não logado no Azure. Execute 'az login' primeiro." -ForegroundColor Red
     exit 1
 }
 
-if (-not (Test-Path "$ProjectPath/LogProcessorFunction/function.json")) {
-    Write-Host "Arquivo function.json não encontrado! Verifique a estrutura do projeto." -ForegroundColor Red
-    exit 1
-}
+# Verificar se os arquivos necessários existem
+Write-Host "n3. Verificando arquivos do projeto..." -ForegroundColor Cyan
+$requiredFiles = @(
+    "host.json",
+    "requirements.txt",
+    "LogProcessorFunction/__init__.py",
+    "LogProcessorFunction/function.json"
+)
 
-Write-Host "Estrutura do projeto verificada com sucesso" -ForegroundColor Green
+foreach ($file in $requiredFiles) {
+    $filePath = Join-Path $ProjectPath $file
+    if (-not (Test-Path $filePath)) {
+        Write-Host "Arquivo obrigatório não encontrado: $file" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "Todos os arquivos necessários encontrados" -ForegroundColor Green
 
 # Navegar para o diretório do projeto
+Write-Host "n4. Navegando para o diretório do projeto..." -ForegroundColor Cyan
+$originalLocation = Get-Location
 Set-Location $ProjectPath
 
-# Fazer o deploy
-Write-Host "`n3. Fazendo deploy da função..." -ForegroundColor Cyan
 try {
+    # Fazer o deploy da função
+    Write-Host "n5. Fazendo deploy da função..." -ForegroundColor Cyan
     func azure functionapp publish $FunctionAppName --python
-    
+
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Deploy realizado com sucesso!" -ForegroundColor Green
     } else {
         Write-Host "Erro durante o deploy" -ForegroundColor Red
         exit 1
     }
-} catch {
-    Write-Host "Erro ao executar o deploy: $_" -ForegroundColor Red
-    exit 1
+
+    # Verificar status da função
+    Write-Host "n6. Verificando status da função..." -ForegroundColor Cyan
+    $functionStatus = az functionapp show --name $FunctionAppName --resource-group $ResourceGroupName --query state --output tsv
+    Write-Host "Status da Function App: $functionStatus" -ForegroundColor Green
+
+    # Obter URL da função
+    Write-Host "n7. Obtendo informações da função..." -ForegroundColor Cyan
+    $functionUrl = az functionapp show --name $FunctionAppName --resource-group $ResourceGroupName --query defaultHostName --output tsv
+    Write-Host "URL da Function App: https://$functionUrl" -ForegroundColor Green
+
+    Write-Host "n=== Deploy Concluído com Sucesso! ===" -ForegroundColor Green
+    Write-Host "nInformações importantes:" -ForegroundColor Yellow
+    Write-Host "- Function App: $FunctionAppName" -ForegroundColor White
+    Write-Host "- URL: https://$functionUrl" -ForegroundColor White
+    Write-Host "- Status: $functionStatus" -ForegroundColor White
+    
+    Write-Host "nMonitoramento:" -ForegroundColor Yellow
+    Write-Host "- Portal Azure: https://portal.azure.com" -ForegroundColor White
+    Write-Host "- Application Insights: Verifique logs e métricas" -ForegroundColor White
+    Write-Host "- Storage Account: Verifique arquivos processados" -ForegroundColor White
+    
+    Write-Host "nPróximos passos:" -ForegroundColor Yellow
+    Write-Host "1. Aguarde a próxima execução (a cada 15 minutos)" -ForegroundColor White
+    Write-Host "2. Monitore os logs no Application Insights" -ForegroundColor White
+    Write-Host "3. Verifique os arquivos processados no container 'processed-logs'" -ForegroundColor White
+
+} finally {
+    # Retornar ao diretório original
+    Set-Location $originalLocation
 }
-
-# Verificar status da Function App
-Write-Host "`n4. Verificando status da Function App..." -ForegroundColor Cyan
-$functionAppStatus = az functionapp show `
-    --name $FunctionAppName `
-    --resource-group $ResourceGroupName `
-    --query state `
-    --output tsv
-
-if ($functionAppStatus -eq "Running") {
-    Write-Host "Function App está executando corretamente" -ForegroundColor Green
-} else {
-    Write-Host "Function App status: $functionAppStatus" -ForegroundColor Yellow
-}
-
-# Listar funções deployadas
-Write-Host "`n5. Listando funções deployadas..." -ForegroundColor Cyan
-az functionapp function list `
-    --name $FunctionAppName `
-    --resource-group $ResourceGroupName `
-    --query "[].{Name:name, Status:config.disabled}" `
-    --output table
-
-Write-Host "`n=== Deploy concluído com sucesso! ===" -ForegroundColor Green
-Write-Host "`nPróximos passos:" -ForegroundColor Yellow
-Write-Host "1. Acesse o portal Azure para monitorar a execução" -ForegroundColor White
-Write-Host "2. Verifique os logs no Application Insights" -ForegroundColor White
-Write-Host "3. A função será executada automaticamente a cada 15 minutos" -ForegroundColor White
-Write-Host "4. Monitore o container 'processed-logs' no Storage Account" -ForegroundColor White
-
-Write-Host "`nURLs úteis:" -ForegroundColor Yellow
-Write-Host "- Portal Azure: https://portal.azure.com" -ForegroundColor White
-Write-Host "- Function App: https://$FunctionAppName.azurewebsites.net" -ForegroundColor White
 

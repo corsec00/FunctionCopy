@@ -1,4 +1,4 @@
-# Script completo para deploy da solução Azure Log Processor
+# Script completo para deploy da solução Azure Log Processor com Azure Key Vault
 # Autor: Leo Santos
 # Data: $(Get-Date)
 
@@ -17,6 +17,9 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$FunctionAppName,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$KeyVaultName,
     
     [Parameter(Mandatory=$true)]
     [string]$SmbServer,
@@ -42,50 +45,56 @@ if (-not $FunctionAppName) {
     $FunctionAppName = "func-log-processor-$suffix"
 }
 
+if (-not $KeyVaultName) {
+    $suffix = Get-Random -Minimum 1000 -Maximum 9999
+    $KeyVaultName = "kv-log-processor-$suffix"
+}
+
 Write-Host "=== Deploy Completo da Solução Azure Log Processor ===" -ForegroundColor Green
 Write-Host "Este script irá:" -ForegroundColor Yellow
 Write-Host "1. Criar toda a infraestrutura necessária" -ForegroundColor White
-Write-Host "2. Fazer o deploy da Azure Function" -ForegroundColor White
-Write-Host "3. Configurar todas as variáveis de ambiente" -ForegroundColor White
+Write-Host "2. Configurar Azure Key Vault com credenciais" -ForegroundColor White
+Write-Host "3. Fazer o deploy da Azure Function" -ForegroundColor White
 
-Write-Host "`nParâmetros:" -ForegroundColor Cyan
+Write-Host "nParâmetros:" -ForegroundColor Cyan
 Write-Host "Resource Group: $ResourceGroupName" -ForegroundColor White
 Write-Host "Location: $Location" -ForegroundColor White
 Write-Host "Storage Account: $StorageAccountName" -ForegroundColor White
 Write-Host "Function App: $FunctionAppName" -ForegroundColor White
+Write-Host "Key Vault: $KeyVaultName" -ForegroundColor White
 Write-Host "SMB Server: $SmbServer" -ForegroundColor White
 Write-Host "SMB Share: $SmbShare" -ForegroundColor White
 Write-Host "SMB Username: $SmbUsername" -ForegroundColor White
 
 # Verificar pré-requisitos
-Write-Host "`n=== Verificando Pré-requisitos ===" -ForegroundColor Cyan
+Write-Host "n=== Verificando Pré-requisitos ===" -ForegroundColor Cyan
 
 # Verificar Azure CLI
 try {
     $azVersion = az --version | Select-String "azure-cli" | Select-Object -First 1
-    Write-Host "✓ Azure CLI: $azVersion" -ForegroundColor Green
+    Write-Host "Azure CLI: $azVersion" -ForegroundColor Green
 } catch {
-    Write-Host "✗ Azure CLI não encontrado. Instale em: https://docs.microsoft.com/cli/azure/install-azure-cli" -ForegroundColor Red
+    Write-Host "Azure CLI não encontrado. Instale em: https://docs.microsoft.com/cli/azure/install-azure-cli" -ForegroundColor Red
     exit 1
 }
 
 # Verificar Azure Functions Core Tools
 try {
     $funcVersion = func --version
-    Write-Host "✓ Azure Functions Core Tools: $funcVersion" -ForegroundColor Green
+    Write-Host "Azure Functions Core Tools: $funcVersion" -ForegroundColor Green
 } catch {
-    Write-Host "✗ Azure Functions Core Tools não encontrado!" -ForegroundColor Red
+    Write-Host "Azure Functions Core Tools não encontrado!" -ForegroundColor Red
     Write-Host "Instale usando: npm install -g azure-functions-core-tools@4 --unsafe-perm true" -ForegroundColor Yellow
     exit 1
 }
 
 # Verificar login no Azure
-Write-Host "`nVerificando login no Azure..." -ForegroundColor Cyan
+Write-Host "nVerificando login no Azure..." -ForegroundColor Cyan
 try {
     $account = az account show --query user.name --output tsv
-    Write-Host "✓ Logado como: $account" -ForegroundColor Green
+    Write-Host "Logado como: $account" -ForegroundColor Green
 } catch {
-    Write-Host "✗ Não logado no Azure. Execute 'az login' primeiro." -ForegroundColor Red
+    Write-Host "Não logado no Azure. Execute 'az login' primeiro." -ForegroundColor Red
     exit 1
 }
 
@@ -93,13 +102,17 @@ try {
 if ($SubscriptionId) {
     Write-Host "Configurando subscription: $SubscriptionId" -ForegroundColor Cyan
     az account set --subscription $SubscriptionId
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Erro ao configurar subscription" -ForegroundColor Red
+        exit 1
+    }
 }
 
 $currentSub = az account show --query name --output tsv
-Write-Host "✓ Subscription ativa: $currentSub" -ForegroundColor Green
+Write-Host "Subscription ativa: $currentSub" -ForegroundColor Green
 
 # Confirmar antes de prosseguir
-Write-Host "`n=== Confirmação ===" -ForegroundColor Yellow
+Write-Host "n=== Confirmação ===" -ForegroundColor Yellow
 Write-Host "Os recursos serão criados na subscription: $currentSub" -ForegroundColor White
 $confirm = Read-Host "Deseja continuar? (s/N)"
 
@@ -109,7 +122,7 @@ if ($confirm -ne "s" -and $confirm -ne "S") {
 }
 
 # Executar script de criação da infraestrutura
-Write-Host "`n=== Fase 1: Criando Infraestrutura ===" -ForegroundColor Green
+Write-Host "n=== Fase 1: Criando Infraestrutura ===" -ForegroundColor Green
 $infraScript = Join-Path $PSScriptRoot "01-create-infrastructure.ps1"
 
 if (-not (Test-Path $infraScript)) {
@@ -117,7 +130,7 @@ if (-not (Test-Path $infraScript)) {
     exit 1
 }
 
-& $infraScript -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -Location $Location -StorageAccountName $StorageAccountName -FunctionAppName $FunctionAppName -SmbServer $SmbServer -SmbShare $SmbShare -SmbUsername $SmbUsername -SmbPassword $SmbPassword
+& $infraScript -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -Location $Location -StorageAccountName $StorageAccountName -FunctionAppName $FunctionAppName -KeyVaultName $KeyVaultName -SmbServer $SmbServer -SmbShare $SmbShare -SmbUsername $SmbUsername -SmbPassword $SmbPassword
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Erro na criação da infraestrutura" -ForegroundColor Red
@@ -125,11 +138,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Aguardar um pouco para a infraestrutura estar pronta
-Write-Host "`nAguardando infraestrutura ficar pronta..." -ForegroundColor Cyan
+Write-Host "nAguardando infraestrutura ficar pronta..." -ForegroundColor Cyan
 Start-Sleep -Seconds 30
 
 # Executar script de deploy da função
-Write-Host "`n=== Fase 2: Deploy da Function ===" -ForegroundColor Green
+Write-Host "n=== Fase 2: Deploy da Function ===" -ForegroundColor Green
 $deployScript = Join-Path $PSScriptRoot "02-deploy-function.ps1"
 
 if (-not (Test-Path $deployScript)) {
@@ -138,6 +151,7 @@ if (-not (Test-Path $deployScript)) {
 }
 
 $projectPath = Split-Path $PSScriptRoot -Parent
+
 & $deployScript -FunctionAppName $FunctionAppName -ResourceGroupName $ResourceGroupName -ProjectPath $projectPath
 
 if ($LASTEXITCODE -ne 0) {
@@ -145,18 +159,20 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "`n=== Deploy Completo Finalizado! ===" -ForegroundColor Green
-Write-Host "`nRecursos criados:" -ForegroundColor Yellow
+Write-Host "n=== Deploy Completo Finalizado! ===" -ForegroundColor Green
+Write-Host "nRecursos criados:" -ForegroundColor Yellow
 Write-Host "- Resource Group: $ResourceGroupName" -ForegroundColor White
 Write-Host "- Storage Account: $StorageAccountName" -ForegroundColor White
+Write-Host "- Key Vault: $KeyVaultName" -ForegroundColor White
 Write-Host "- Function App: $FunctionAppName" -ForegroundColor White
-Write-Host "- Container: processed-logs" -ForegroundColor White
 
-Write-Host "`nA função está configurada para executar a cada 15 minutos." -ForegroundColor Cyan
-Write-Host "Monitore a execução no portal Azure ou Application Insights." -ForegroundColor Cyan
+Write-Host "nSegurança implementada:" -ForegroundColor Yellow
+Write-Host "- Credenciais armazenadas no Azure Key Vault" -ForegroundColor White
+Write-Host "- Managed Identity configurada" -ForegroundColor White
+Write-Host "- Princípio de menor privilégio aplicado" -ForegroundColor White
 
-Write-Host "`nURLs importantes:" -ForegroundColor Yellow
+Write-Host "nMonitoramento:" -ForegroundColor Yellow
 Write-Host "- Portal Azure: https://portal.azure.com" -ForegroundColor White
-Write-Host "- Function App: https://$FunctionAppName.azurewebsites.net" -ForegroundColor White
-Write-Host "- Storage Account: https://$StorageAccountName.blob.core.windows.net" -ForegroundColor White
+Write-Host "- Application Insights configurado" -ForegroundColor White
+Write-Host "- Logs centralizados" -ForegroundColor White
 

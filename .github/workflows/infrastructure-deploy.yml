@@ -1,0 +1,276 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+      - 'scripts/**'
+      - '.github/workflows/infrastructure-deploy.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - production
+      destroy:
+        description: 'Destroy infrastructure'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TF_VERSION: '1.5.0'
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+jobs:
+  # Job de validação do Terraform
+  terraform-validate:
+    runs-on: ubuntu-latest
+    name: Validate Terraform
+    
+    steps:
+    - name: 'Checkout'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Terraform'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Terraform Format Check'
+      run: |
+        cd terraform
+        terraform fmt -check -recursive
+
+    - name: 'Terraform Init'
+      run: |
+        cd terraform
+        terraform init -backend=false
+
+    - name: 'Terraform Validate'
+      run: |
+        cd terraform
+        terraform validate
+
+    - name: 'Run TFLint'
+      uses: terraform-linters/setup-tflint@v3
+      with:
+        tflint_version: latest
+
+    - name: 'TFLint'
+      run: |
+        cd terraform
+        tflint --init
+        tflint
+
+  # Job de planejamento para desenvolvimento
+  terraform-plan-dev:
+    runs-on: ubuntu-latest
+    name: Plan Development
+    needs: terraform-validate
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    environment: development
+    
+    steps:
+    - name: 'Checkout'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Terraform'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Azure Login'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
+
+    - name: 'Terraform Init'
+      run: |
+        cd terraform
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP_DEV }}" \
+          -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT_DEV }}" \
+          -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER_DEV }}" \
+          -backend-config="key=dev.terraform.tfstate"
+
+    - name: 'Terraform Plan'
+      run: |
+        cd terraform
+        terraform plan \
+          -var-file="environments/development.tfvars" \
+          -out=tfplan-dev
+
+    - name: 'Upload Plan Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: tfplan-dev
+        path: terraform/tfplan-dev
+
+  # Job de aplicação para desenvolvimento
+  terraform-apply-dev:
+    runs-on: ubuntu-latest
+    name: Apply Development
+    needs: terraform-plan-dev
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    environment: development
+    
+    steps:
+    - name: 'Checkout'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Terraform'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Azure Login'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
+
+    - name: 'Download Plan Artifact'
+      uses: actions/download-artifact@v3
+      with:
+        name: tfplan-dev
+        path: terraform/
+
+    - name: 'Terraform Init'
+      run: |
+        cd terraform
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP_DEV }}" \
+          -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT_DEV }}" \
+          -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER_DEV }}" \
+          -backend-config="key=dev.terraform.tfstate"
+
+    - name: 'Terraform Apply'
+      if: github.event.inputs.destroy != 'true'
+      run: |
+        cd terraform
+        terraform apply tfplan-dev
+
+    - name: 'Terraform Destroy'
+      if: github.event.inputs.destroy == 'true'
+      run: |
+        cd terraform
+        terraform destroy \
+          -var-file="environments/development.tfvars" \
+          -auto-approve
+
+  # Job de planejamento para produção
+  terraform-plan-prod:
+    runs-on: ubuntu-latest
+    name: Plan Production
+    needs: terraform-validate
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+    
+    steps:
+    - name: 'Checkout'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Terraform'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Azure Login'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS_PROD }}
+
+    - name: 'Terraform Init'
+      run: |
+        cd terraform
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP_PROD }}" \
+          -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT_PROD }}" \
+          -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER_PROD }}" \
+          -backend-config="key=prod.terraform.tfstate"
+
+    - name: 'Terraform Plan'
+      run: |
+        cd terraform
+        terraform plan \
+          -var-file="environments/production.tfvars" \
+          -out=tfplan-prod
+
+    - name: 'Upload Plan Artifact'
+      uses: actions/upload-artifact@v3
+      with:
+        name: tfplan-prod
+        path: terraform/tfplan-prod
+
+  # Job de aplicação para produção
+  terraform-apply-prod:
+    runs-on: ubuntu-latest
+    name: Apply Production
+    needs: terraform-plan-prod
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment: production
+    
+    steps:
+    - name: 'Checkout'
+      uses: actions/checkout@v4
+
+    - name: 'Setup Terraform'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Azure Login'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS_PROD }}
+
+    - name: 'Download Plan Artifact'
+      uses: actions/download-artifact@v3
+      with:
+        name: tfplan-prod
+        path: terraform/
+
+    - name: 'Terraform Init'
+      run: |
+        cd terraform
+        terraform init \
+          -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP_PROD }}" \
+          -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT_PROD }}" \
+          -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER_PROD }}" \
+          -backend-config="key=prod.terraform.tfstate"
+
+    - name: 'Terraform Apply'
+      if: github.event.inputs.destroy != 'true'
+      run: |
+        cd terraform
+        terraform apply tfplan-prod
+
+    - name: 'Terraform Destroy'
+      if: github.event.inputs.destroy == 'true'
+      run: |
+        cd terraform
+        terraform destroy \
+          -var-file="environments/production.tfvars" \
+          -auto-approve
+
+    - name: 'Post-deployment validation'
+      if: github.event.inputs.destroy != 'true'
+      run: |
+        echo "Validating infrastructure deployment..."
+        # Verificar se os recursos foram criados corretamente
+        az functionapp show --name ${{ secrets.AZURE_FUNCTIONAPP_NAME_PROD }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+        echo "Infrastructure validation completed successfully"
+
