@@ -5,9 +5,13 @@
 [![Coverage](https://codecov.io/gh/corsec00/FunctionCopy/branch/main/graph/badge.svg)](https://codecov.io/gh/corsec00/FunctionCopy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Header
+Autor: Leo Santos
+Data da última verificação: 12/Ago/25
+
 ## Visão Geral
 
-O FunctionCopy é uma solução modernizada de processamento de logs que utiliza Azure Functions para automatizar a coleta, filtragem e armazenamento de arquivos de log de compartilhamentos de rede. Esta versão implementa as melhores práticas de segurança, incluindo Azure Key Vault para gerenciamento de credenciais, CI/CD automatizado e arquitetura de segurança robusta.
+O FunctionCopy é uma solução modernizada de processamento de logs que utiliza Azure Functions para automatizar a coleta, filtragem e armazenamento de arquivos de log de compartilhamentos de rede. Esta versão implementa as melhores práticas de segurança, incluindo Azure Key Vault para gerenciamento de credenciais, CI/CD automatizado e arquitetura de segurança robusta. Este projeto surgiu de uma demanda corporativa juntamente com a necessidade de criação de exercícios para as aulas de Segurança em Cloud. 
 
 ### Principais Melhorias
 
@@ -351,6 +355,3 @@ az keyvault secret show --vault-name kv-log-processor-xxxx --name smb-server
 - [ ] Machine Learning para detecção de anomalias
 - [ ] API REST para integração com sistemas externos
 - [ ] Arquitetura de microserviços completa
-
-### Footer
-Desenvolvido por Leo Santos
