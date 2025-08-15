@@ -68,7 +68,7 @@ param(
     [string]$SmbUsername,
     
     [Parameter(Mandatory = $true)]
-    [string]$SmbPassword
+    [SecureString]$SmbPassword
 )
 
 # Função para escrever logs coloridos
@@ -192,7 +192,7 @@ try {
     Write-ColorOutput "`n5. Criando Function App: $FunctionAppName" "Yellow"
     $funcExists = az functionapp list --resource-group $ResourceGroupName --query "[?name=='$FunctionAppName']" | ConvertFrom-Json
     if ($funcExists.Count -eq 0) {
-        Invoke-AzCommand "functionapp create --resource-group $ResourceGroupName --consumption-plan-location $Location --runtime powershell --runtime-version 7.2 --functions-version 4 --name $FunctionAppName --storage-account $StorageAccountName --os-type Windows" "Criação da Function App"
+        Invoke-AzCommand "az functionapp create --name $FunctionAppName --resource-group $ResourceGroupName --plan $AppServicePlanName --storage-account $StorageAccountName --runtime powershell --runtime-version 7.4 --functions-version 4 --os-type Windows --app-insights $ApplicationInsightName" "Criação da Function App"
         Write-ColorOutput "Function App criada com sucesso!" "Green"
     } else {
         Write-ColorOutput "Function App já existe." "Green"

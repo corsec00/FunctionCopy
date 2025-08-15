@@ -12,39 +12,9 @@ $SmbServer = "Server004"
 $SmbShare = "logs"
 $SmbUsername = "leo"
 $SmbPassword = "123Meu_"
+$ProjectPath = "."
+$UPNKeyVault = "corsec00_gmail.com#EXT#@corsec00gmail.onmicrosoft.com"
 
-
-
-
-
-
-
-
-
-
-# Executar a função manualmente via Azure CLI
-az functionapp function invoke --name $FunctionAppName --resource-group $ResourceGroupName --function-name LogProcessorFunction
-
-az functionapp function show --name $FunctionAppName --resource-group $ResourceGroupName --function-name LogProcessorFunction --query "invokeUrlTemplate" -o tsv
-
-az functionapp function show --name $FunctionAppName --resource-group $ResourceGroupName --function-name LogProcessorFunction --query "config.bindings"
-
-
-
-# Fazer download da versão atual
-func azure functionapp fetch-app-settings $FunctionAppName
-func azure functionapp download $FunctionAppName --output-path ./backup-timer-version
-
-# Backup das configurações
-az functionapp config appsettings list --name $FunctionAppName --resource-group $ResourceGroupName > backup-settings.json
-
-pip install -r requirements.txt
-
-# Iniciar função localmente
-func start
-
-# Em outro terminal, testar a função
-curl -X GET "http://localhost:7071/api/LogProcessorFunction?dry_run=true"
 
 
 

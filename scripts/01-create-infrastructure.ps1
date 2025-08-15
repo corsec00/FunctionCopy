@@ -152,7 +152,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 10. Criar Function App
 Write-Host "n10. Criando Function App..." -ForegroundColor Cyan
-az functionapp create --name $FunctionAppName --resource-group $ResourceGroupName --plan $AppServicePlanName --storage-account $StorageAccountName --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux # --app-insights $ApplicationInsightName
+az functionapp create --name $FunctionAppName --resource-group $ResourceGroupName --plan $AppServicePlanName --storage-account $StorageAccountName --runtime powershell --runtime-version 7.4 --functions-version 4 --os-type Windows --app-insights $ApplicationInsightName
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Function App criada com sucesso" -ForegroundColor Green
@@ -179,6 +179,7 @@ Start-Sleep -Seconds 30
 # 13. Conceder permissões ao Key Vault para a Managed Identity
 Write-Host "n13. Concedendo permissões ao Key Vault..." -ForegroundColor Cyan
 az role assignment create --role "Key Vault Secrets User" --assignee $PrincipalId --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.KeyVault/vaults/$KeyVaultName"
+az role assignment create --role "Key Vault Secrets Officer" --assignee $UPNKeyVault --scope $(az keyvault show --name $KeyVaultName --query id -o tsv)
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Permissões concedidas com sucesso" -ForegroundColor Green
@@ -191,7 +192,7 @@ if ($LASTEXITCODE -eq 0) {
 Write-Host "n14. Armazenando segredos no Key Vault..." -ForegroundColor Cyan
 
 # Armazenar credenciais SMB
-# az role assignment create --role "Key Vault Secrets Officer" --assignee "corsec00_gmail.com#EXT#@corsec00gmail.onmicrosoft.com" --scope $(az keyvault show --name $KeyVaultName --query id -o tsv)
+# 
 az keyvault secret set --vault-name $KeyVaultName --name "smb-server" --value $SmbServer
 az keyvault secret set --vault-name $KeyVaultName --name "smb-share" --value $SmbShare
 az keyvault secret set --vault-name $KeyVaultName --name "smb-username" --value $SmbUsername
@@ -222,16 +223,101 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 
-Write-Host "n=== Deploy Completo Finalizado! ===" -ForegroundColor Green
-Write-Host "nRecursos criados:" -ForegroundColor Yellow
+# 16. Verificar se o Azure Functions Core Tools está instalado
+Write-Host "n16. Verificando Azure Functions Core Tools..." -ForegroundColor Cyan
+try {
+    $funcVersion = func --version
+    Write-Host "Azure Functions Core Tools: $funcVersion" -ForegroundColor Green
+} catch {
+    Write-Host "Azure Functions Core Tools não encontrado!" -ForegroundColor Red
+    Write-Host "Instale usando: npm install -g azure-functions-core-tools@4 --unsafe-perm true" -ForegroundColor Yellow
+    exit 1
+}
+
+# 17. Verificar se está logado no Azure
+Write-Host "n17. Verificando login no Azure..." -ForegroundColor Cyan
+try {
+    $account = az account show --query user.name --output tsv
+    Write-Host "Logado como: $account" -ForegroundColor Green
+} catch {
+    Write-Host "Não logado no Azure. Execute 'az login' primeiro." -ForegroundColor Red
+    exit 1
+}
+## Deploy da Function App
+# 18. Verificar se os arquivos necessários existem
+Write-Host "n18. Verificando arquivos do projeto..." -ForegroundColor Cyan
+$requiredFiles = @(
+    "host.json",
+    "local.settings.json",
+    "LogProcessorFunction/run.ps1"
+)
+
+foreach ($file in $requiredFiles) {
+    $filePath = Join-Path $ProjectPath $file
+    if (-not (Test-Path $filePath)) {
+        Write-Host "Arquivo obrigatório não encontrado: $file" -ForegroundColor Red
+        exit 1
+    }
+}
+Write-Host "Todos os arquivos necessários encontrados" -ForegroundColor Green
+
+
+# 19. Navegar para o diretório do projeto
+Write-Host "n19. Navegando para o diretório do projeto e fazendo o deploy..." -ForegroundColor Cyan
+$originalLocation = Get-Location
+Set-Location $ProjectPath
+
+    if (Test-Path $projectPath) {
+        Set-Location $projectPath
+        
+        # Verificar se func está instalado
+        try {
+            $funcVersion = func --version 2>$null
+            if ($funcVersion) {
+                Write-ColorOutput "Azure Functions Core Tools encontrado: $funcVersion" "Green"
+                
+                # Fazer deploy usando func
+                $deployResult = func azure functionapp publish $FunctionAppName --powershell 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-ColorOutput "Deploy do código concluído com sucesso!" "Green"
+                } else {
+                    Write-ColorOutput "Erro no deploy do código: $deployResult" "Red"
+                    Write-ColorOutput "Você pode fazer o deploy manualmente usando: func azure functionapp publish $FunctionAppName --powershell" "Yellow"
+                }
+            } else {
+                Write-ColorOutput "Azure Functions Core Tools não encontrado." "Yellow"
+                Write-ColorOutput "Instale o Azure Functions Core Tools para fazer deploy do código automaticamente." "Yellow"
+                Write-ColorOutput "Download: https://docs.microsoft.com/en-us/azure/azure-functions/functions-run-local" "Yellow"
+                Write-ColorOutput "Comando manual: func azure functionapp publish $FunctionAppName --powershell" "Yellow"
+            }
+        }
+        catch {
+            Write-ColorOutput "Erro ao verificar Azure Functions Core Tools: $($_.Exception.Message)" "Yellow"
+            Write-ColorOutput "Comando manual: func azure functionapp publish $FunctionAppName --powershell" "Yellow"
+        }
+        
+        Set-Location $currentPath
+    } else {
+        Write-ColorOutput "Diretório do projeto não encontrado: $projectPath" "Yellow"
+        Write-ColorOutput "Faça o deploy manualmente do diretório do projeto usando: func azure functionapp publish $FunctionAppName --powershell" "Yellow"
+    }
+
+# 20. Verificar status da Function App
+    Write-ColorOutput "`n20. Verificando status da Function App" "Yellow"
+    $funcApp = az functionapp show --name $FunctionAppName --resource-group $ResourceGroupName | ConvertFrom-Json
+    
+
+Write-Host "=== Deploy Completo Finalizado! ===" -ForegroundColor Green
+Write-Host "Recursos criados:" -ForegroundColor Yellow
 Write-Host "- Resource Group: $ResourceGroupName" -ForegroundColor White
 Write-Host "- Storage Account: $StorageAccountName" -ForegroundColor White
 Write-Host "- Key Vault: $KeyVaultName" -ForegroundColor White
 Write-Host "- Function App: $FunctionAppName" -ForegroundColor White
 Write-Host "- Application Insights: $ApplicationInsightName" -ForegroundColor White
+Write-Host "- Status da Function App: $($funcApp.state)"  -ForegroundColor Green
+Write-Host "- URL da Function App: https://$($funcApp.defaultHostName)"  -ForegroundColor Green
 
-Write-Host "nPróximos passos:" -ForegroundColor Yellow
-Write-Host "1. Execute o script 02-deploy-function.ps1 para fazer o deploy do código" -ForegroundColor White
-Write-Host "2. Monitore a execução através do Application Insights" -ForegroundColor White
-Write-Host "3. Verifique os arquivos processados no Blob Storage" -ForegroundColor White
 
+Write-Host "Próximos passos:" -ForegroundColor Yellow
+Write-Host "2. Monitore a execução através do Application Insights" -ForegroundColor Yellow
+Write-Host "3. Verifique os arquivos processados no Blob Storage" -ForegroundColor Yellow
