@@ -1,6 +1,9 @@
 # Script para deploy da Azure Function com Azure Key Vault
 # Autor: Leo Santos
 # Data: $(Get-Date)
+$FunctionAppName = "func-log-processor-lss004"
+$ResourceGroupName = "RG-Log-Processor-04"
+$ProjectPath = "."
 
 param(
     [Parameter(Mandatory=$true)]

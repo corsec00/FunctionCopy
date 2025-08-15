@@ -40,10 +40,10 @@ az functionapp update `
 az functionapp config set `
     --name $FunctionAppName `
     --resource-group $ResourceGroupName `
-    --min-tls-version 1.2
+    --min-tls-version 1.3
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "HTTPS e TLS 1.2 configurados com sucesso" -ForegroundColor Green
+    Write-Host "HTTPS e TLS 1.3 configurados com sucesso" -ForegroundColor Green
 } else {
     Write-Host "Erro ao configurar HTTPS/TLS" -ForegroundColor Red
 }
@@ -54,7 +54,7 @@ az storage account update `
     --name $StorageAccountName `
     --resource-group $ResourceGroupName `
     --https-only true `
-    --min-tls-version TLS1_2 `
+    --min-tls-version TLS1_3 `
     --allow-blob-public-access false
 
 if ($LASTEXITCODE -eq 0) {

@@ -49,6 +49,7 @@ Write-Host "Storage Account: $StorageAccountName" -ForegroundColor Yellow
 Write-Host "Function App: $FunctionAppName" -ForegroundColor Yellow
 Write-Host "Key Vault: $KeyVaultName" -ForegroundColor Yellow
 
+
 # 1. Login e seleção da subscription
 Write-Host "n1. Configurando Azure CLI..." -ForegroundColor Cyan
 try {
@@ -61,9 +62,7 @@ try {
 
 # 2. Criar Resource Group
 Write-Host "n2. Criando Resource Group..." -ForegroundColor Cyan
-az group create `
-    --name $ResourceGroupName `
-    --location $Location
+az group create --name $ResourceGroupName --location $Location
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Resource Group criado com sucesso" -ForegroundColor Green
@@ -72,14 +71,10 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 
+
 # 3. Criar Storage Account
 Write-Host "n3. Criando Storage Account..." -ForegroundColor Cyan
-az storage account create `
-    --name $StorageAccountName `
-    --resource-group $ResourceGroupName `
-    --location $Location `
-    --sku Standard_LRS `
-    --kind StorageV2
+az storage account create --name $StorageAccountName --resource-group $ResourceGroupName --location $Location --sku Standard_LRS --kind StorageV2
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Storage Account criado com sucesso" -ForegroundColor Green
@@ -90,9 +85,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 4. Criar container no Blob Storage
 Write-Host "n4. Criando container no Blob Storage..." -ForegroundColor Cyan
-az storage container create `
-    --name $ContainerName `
-    --account-name $StorageAccountName
+az storage container create --name $ContainerName --account-name $StorageAccountName
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Container criado com sucesso" -ForegroundColor Green
@@ -103,11 +96,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 5. Obter connection string do Storage Account
 Write-Host "n5. Obtendo connection string do Storage Account..." -ForegroundColor Cyan
-$StorageConnectionString = az storage account show-connection-string `
-    --name $StorageAccountName `
-    --resource-group $ResourceGroupName `
-    --query connectionString `
-    --output tsv
+$StorageConnectionString = az storage account show-connection-string --name $StorageAccountName --resource-group $ResourceGroupName --query connectionString --output tsv
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Connection string obtida com sucesso" -ForegroundColor Green
@@ -118,12 +107,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 6. Criar Azure Key Vault
 Write-Host "n6. Criando Azure Key Vault..." -ForegroundColor Cyan
-az keyvault create `
-    --name $KeyVaultName `
-    --resource-group $ResourceGroupName `
-    --location $Location `
-    --sku standard `
-    --enable-rbac-authorization true
+az keyvault create --name $KeyVaultName --resource-group $ResourceGroupName --location $Location --sku standard --enable-rbac-authorization true
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Key Vault criado com sucesso" -ForegroundColor Green
@@ -134,7 +118,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 7. Criar Application Insights
 Write-Host "n7. Criando Application Insights..." -ForegroundColor Cyan
-az monitor app-insights component create --app $ApplicationInsightName --location $Location --resource-group $ResourceGroupName --kind web
+az monitor app-insights component create --app $ApplicationInsightName --location $Location --resource-group $ResourceGroupName --kind web --application-type web
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Application Insights criado com sucesso" -ForegroundColor Green
@@ -143,13 +127,10 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 
-# 8. Obter Instrumentation Key do Application Insights
+
+# 8. Obter Instrumentation Key do Application Insights 
 Write-Host "n8. Obtendo Instrumentation Key..." -ForegroundColor Cyan
-$InstrumentationKey = az monitor app-insights component show `
-    --app $ApplicationInsightName `
-    --resource-group $ResourceGroupName `
-    --query instrumentationKey `
-    --output tsv
+$InstrumentationKey = az monitor app-insights component show --app $ApplicationInsightName --resource-group $ResourceGroupName --query instrumentationKey --output tsv
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Instrumentation Key obtida com sucesso" -ForegroundColor Green
@@ -160,12 +141,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 9. Criar App Service Plan (Consumption)
 Write-Host "n9. Criando App Service Plan..." -ForegroundColor Cyan
-az functionapp plan create `
-    --name $AppServicePlanName `
-    --resource-group $ResourceGroupName `
-    --location $Location `
-    --sku Y1 `
-    --is-linux
+az functionapp plan create --name $AppServicePlanName --resource-group $ResourceGroupName --location $Location --sku B1 --is-linux
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "App Service Plan criado com sucesso" -ForegroundColor Green
@@ -176,15 +152,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 10. Criar Function App
 Write-Host "n10. Criando Function App..." -ForegroundColor Cyan
-az functionapp create `
-    --name $FunctionAppName `
-    --resource-group $ResourceGroupName `
-    --plan $AppServicePlanName `
-    --storage-account $StorageAccountName `
-    --runtime python `
-    --runtime-version 3.9 `
-    --os-type Linux `
-    --app-insights $ApplicationInsightName
+az functionapp create --name $FunctionAppName --resource-group $ResourceGroupName --plan $AppServicePlanName --storage-account $StorageAccountName --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux # --app-insights $ApplicationInsightName
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Function App criada com sucesso" -ForegroundColor Green
@@ -195,11 +163,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 11. Habilitar System Assigned Managed Identity
 Write-Host "n11. Habilitando Managed Identity..." -ForegroundColor Cyan
-$PrincipalId = az functionapp identity assign `
-    --name $FunctionAppName `
-    --resource-group $ResourceGroupName `
-    --query principalId `
-    --output tsv
+$PrincipalId = az functionapp identity assign --name $FunctionAppName --resource-group $ResourceGroupName --query principalId --output tsv
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Managed Identity habilitada com sucesso. Principal ID: $PrincipalId" -ForegroundColor Green
@@ -214,10 +178,7 @@ Start-Sleep -Seconds 30
 
 # 13. Conceder permissões ao Key Vault para a Managed Identity
 Write-Host "n13. Concedendo permissões ao Key Vault..." -ForegroundColor Cyan
-az role assignment create `
-    --role "Key Vault Secrets User" `
-    --assignee $PrincipalId `
-    --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.KeyVault/vaults/$KeyVaultName"
+az role assignment create --role "Key Vault Secrets User" --assignee $PrincipalId --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.KeyVault/vaults/$KeyVaultName"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Permissões concedidas com sucesso" -ForegroundColor Green
@@ -230,6 +191,7 @@ if ($LASTEXITCODE -eq 0) {
 Write-Host "n14. Armazenando segredos no Key Vault..." -ForegroundColor Cyan
 
 # Armazenar credenciais SMB
+# az role assignment create --role "Key Vault Secrets Officer" --assignee "corsec00_gmail.com#EXT#@corsec00gmail.onmicrosoft.com" --scope $(az keyvault show --name $KeyVaultName --query id -o tsv)
 az keyvault secret set --vault-name $KeyVaultName --name "smb-server" --value $SmbServer
 az keyvault secret set --vault-name $KeyVaultName --name "smb-share" --value $SmbShare
 az keyvault secret set --vault-name $KeyVaultName --name "smb-username" --value $SmbUsername
@@ -243,12 +205,10 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 
+
 # 15. Configurar Application Settings (apenas configurações não sensíveis)
 Write-Host "n15. Configurando Application Settings..." -ForegroundColor Cyan
-az functionapp config appsettings set `
-    --name $FunctionAppName `
-    --resource-group $ResourceGroupName `
-    --settings `
+az functionapp config appsettings set --name $FunctionAppName --resource-group $ResourceGroupName --settings `
         "KEY_VAULT_URL=https://$KeyVaultName.vault.azure.net/" `
         "BLOB_CONTAINER_NAME=$ContainerName" `
         "APPINSIGHTS_INSTRUMENTATIONKEY=$InstrumentationKey" `
@@ -260,6 +220,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Erro ao configurar Application Settings" -ForegroundColor Red
     exit 1
 }
+
 
 Write-Host "n=== Deploy Completo Finalizado! ===" -ForegroundColor Green
 Write-Host "nRecursos criados:" -ForegroundColor Yellow
