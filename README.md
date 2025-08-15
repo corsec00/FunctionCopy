@@ -289,3 +289,4 @@ Para suporte e dúvidas:
 - Consulte a documentação oficial do Azure Functions
 - Verifique os logs no Application Insights
 
+fim durante uma aula da FIAP
