@@ -306,6 +306,27 @@ Set-Location $ProjectPath
     Write-ColorOutput "`n20. Verificando status da Function App" "Yellow"
     $funcApp = az functionapp show --name $FunctionAppName --resource-group $ResourceGroupName | ConvertFrom-Json
     
+# 21. Configurando o CORS para a Function
+Write-Host "n20. Realizando as configurações finais na Function..." -ForegroundColor Cyan
+az functionapp cors add --name $FunctionAppName --resource-group $ResourceGroupName --allowed-origins "https://portal.azure.com"
+az functionapp cors add --name $FunctionAppName --resource-group $ResourceGroupName --allowed-origins "https://functions.azure.com"
+az functionapp restart --name $FunctionAppName --resource-group $ResourceGroupName
+
+# Verificar e configurar Managed Identity
+az functionapp identity assign --name $FunctionAppName --resource-group $ResourceGroupName
+# Configurar permissões Key Vault
+$identity = az functionapp identity show --name $FunctionAppName --resource-group $ResourceGroupName | ConvertFrom-Json
+# Role: Key Vault Secrets User (para ler segredos)
+az role assignment create --assignee $identity.principalId --role "Key Vault Secrets User" --scope $(az keyvault show --name $KeyVaultName --resource-group $ResourceGroupName --query id -o tsv)
+# 401
+az functionapp function keys set --name $FunctionAppName --resource-group $ResourceGroupName --function-name "LogProcessorFunction" --key-name default
+# 403
+az functionapp keys set --name $FunctionAppName --resource-group $ResourceGroupName --key-type masterKey --key-name masterKey
+az functionapp function invoke --name $FunctionAppName --resource-group $ResourceGroupName --function-name "LogProcessorFunction"
+# Acesso AKV via Run.ps1
+az functionapp config appsettings set --name $FunctionAppName --resource-group $ResourceGroupName --settings "KEY_VAULT_NAME=$KeyVaultName"
+
+
 
 Write-Host "=== Deploy Completo Finalizado! ===" -ForegroundColor Green
 Write-Host "Recursos criados:" -ForegroundColor Yellow
@@ -321,3 +342,4 @@ Write-Host "- URL da Function App: https://$($funcApp.defaultHostName)"  -Foregr
 Write-Host "Próximos passos:" -ForegroundColor Yellow
 Write-Host "2. Monitore a execução através do Application Insights" -ForegroundColor Yellow
 Write-Host "3. Verifique os arquivos processados no Blob Storage" -ForegroundColor Yellow
+

@@ -11,50 +11,8 @@ $ContainerName = "processed-logs"
 $SmbServer = "Server004"
 $SmbShare = "logs"
 $SmbUsername = "leo"
-$SmbPassword = "123Meu_"
+$SmbPassword = "123Meu_123Meu_"
 $ProjectPath = "."
 $UPNKeyVault = "corsec00_gmail.com#EXT#@corsec00gmail.onmicrosoft.com"
 
-
-
-
-
-
-
-
-
-
-
-
-# Criar ambiente virtual
-python -m venv venv
-
-# Ativar ambiente virtual
-.\venv\Scripts\Activate.ps1
-
-# Se der erro de execução de scripts, execute:
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Depois ativar novamente:
-.\venv\Scripts\Activate.ps1
-
-# Instalar dependências uma por uma
-pip install --upgrade pip
-pip install azure-functions
-pip install azure-keyvault-secrets
-pip install azure-identity
-pip install azure-storage-blob
-pip install requests
-pip install pysmb
-
-
-pip install -r requirements-windows.txt
-# Verificar se tudo foi instalado
-pip list | Select-String "azure|pysmb"
-
-
-# Iniciar função localmente
-func start
-
-# Em outro terminal, testar a função
-curl -X GET "http://localhost:7071/api/LogProcessorFunction?dry_run=true"
+func azure functionapp publish $FunctionAppName --powershell
